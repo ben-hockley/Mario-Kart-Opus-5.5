@@ -1,0 +1,37 @@
+import type { TrackDef } from '../types';
+
+export const frostyPeaks: TrackDef = {
+  id: 'frost',
+  name: 'Frosty Peaks',
+  theme: 'frost',
+  width: 16,
+  offroad: 6,
+  edge: 'wall',
+  seed: 37,
+  points: [
+    { x: 0, z: -60, y: 0 },
+    { x: 0, z: 10, y: 2 },
+    { x: -10, z: 60, y: 6 },
+    { x: -45, z: 90, y: 10, bank: 4 },
+    { x: -90, z: 90, y: 14, bank: 4 },
+    { x: -120, z: 60, y: 17 },
+    { x: -125, z: 15, y: 18 },
+    { x: -105, z: -20, y: 18 },
+    { x: -70, z: -30, y: 16 },
+    { x: -50, z: -60, y: 13 },
+    { x: -60, z: -100, y: 10 },
+    { x: -95, z: -122, y: 8 },
+    { x: -122, z: -152, y: 6, bank: -6 },
+    { x: -100, z: -186, y: 4, bank: -6 },
+    { x: -55, z: -190, y: 2 },
+    { x: -20, z: -160, y: 1 },
+    { x: -5, z: -115, y: 0 },
+  ],
+  sections: [
+    { from: 3, to: 5.6, left: 'drop', offroad: 5 },
+    { from: 6.4, to: 8.0, ice: true },
+  ],
+  itemRows: [1.5, 7.9, 14.5],
+  boostPads: [{ at: 15.2, lat: -0.3 }],
+  ramps: [{ at: 15.55, length: 9, height: 1.7 }],
+};

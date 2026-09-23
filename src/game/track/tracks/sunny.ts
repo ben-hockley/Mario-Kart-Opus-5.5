@@ -1,0 +1,33 @@
+import type { TrackDef } from '../types';
+
+export const sunnyCircuit: TrackDef = {
+  id: 'sunny',
+  name: 'Sunny Circuit',
+  theme: 'sunny',
+  width: 20,
+  offroad: 7,
+  edge: 'wall',
+  seed: 11,
+  points: [
+    { x: 0, z: -60 },
+    { x: 0, z: 20 },
+    { x: 0, z: 90 },
+    { x: 12, z: 135, bank: -4 },
+    { x: 48, z: 160, y: 2, bank: -5 },
+    { x: 92, z: 152, y: 4, bank: -4 },
+    { x: 117, z: 118, y: 4 },
+    { x: 112, z: 80, y: 3 },
+    { x: 88, z: 54, y: 1 },
+    { x: 86, z: 18 },
+    { x: 110, z: -10 },
+    { x: 142, z: -32, y: 1 },
+    { x: 154, z: -78, y: 2 },
+    { x: 136, z: -122, y: 1, bank: -5 },
+    { x: 94, z: -144, bank: -5 },
+    { x: 48, z: -140, bank: -3 },
+    { x: 14, z: -114 },
+  ],
+  itemRows: [1.6, 8.6, 13.6],
+  boostPads: [{ at: 10.2, lat: 0.35 }],
+  ramps: [{ at: 0.55, length: 9, height: 1.6 }],
+};

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#14121f" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2315122a'/%3E%3Ccircle cx='30' cy='70' r='14' fill='%23ffcf33'/%3E%3Ccircle cx='72' cy='70' r='14' fill='%23ffcf33'/%3E%3Cpath d='M16 58 L30 34 L70 34 L86 58 Z' fill='%23ff4d5e'/%3E%3C/svg%3E" />
+    <title>Kart Racer Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Connect / start screen -->
+      <section id="screen-start" class="screen active">
+        <div class="brand">KART<span>RACER</span></div>
+        <div id="start-status" class="status">Connecting…</div>
+        <button id="btn-start" class="big-start" disabled>TAP TO START</button>
+        <p class="small">Hold your phone sideways. Tilt steering asks for motion access on iPhone.</p>
+      </section>
+
+      <!-- Menu screen: d-pad + A/B -->
+      <section id="screen-menu" class="screen">
+        <div class="topbar">
+          <div class="badge" data-badge>P?</div>
+          <div class="hint" id="menu-hint">Waiting for the game…</div>
+          <button class="icon-btn" data-open-settings aria-label="Settings">⚙</button>
+        </div>
+        <div class="menu-body">
+          <div class="dpad">
+            <button class="dp up" data-menu="up" aria-label="Up">▲</button>
+            <button class="dp left" data-menu="left" aria-label="Left">◀</button>
+            <button class="dp right" data-menu="right" aria-label="Right">▶</button>
+            <button class="dp down" data-menu="down" aria-label="Down">▼</button>
+          </div>
+          <div class="ab">
+            <button class="ab-btn b" data-menu="back">B<small>BACK</small></button>
+            <button class="ab-btn a" data-menu="ok">A<small>OK</small></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Race screen -->
+      <section id="screen-race" class="screen">
+        <div class="topbar">
+          <div class="badge" data-badge>P?</div>
+          <button class="icon-btn" id="btn-pause" aria-label="Pause">❚❚</button>
+          <button class="icon-btn" data-open-settings aria-label="Settings">⚙</button>
+        </div>
+        <div class="race-body">
+          <div class="left-zone" id="left-zone">
+            <!-- tilt mode -->
+            <div class="tilt-ui">
+              <div class="wheel" id="wheel"><div class="wheel-inner"></div></div>
+              <div class="left-buttons">
+                <div class="pad-btn item" data-btn="item">ITEM</div>
+                <div class="pad-btn brake" data-btn="brake">BRAKE</div>
+              </div>
+            </div>
+            <!-- touch mode -->
+            <div class="touch-ui">
+              <div class="joy-hint">Drag to steer</div>
+              <div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div>
+            </div>
+          </div>
+          <div class="right-zone">
+            <div class="pad-btn item touch-only" data-btn="item">ITEM</div>
+            <div class="pad-btn brake touch-only" data-btn="brake">BRAKE</div>
+            <div class="pad-btn drift" data-btn="drift">DRIFT<small>hop / trick</small></div>
+            <div class="pad-btn gas" data-btn="accel">GAS</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Waiting screen -->
+      <section id="screen-wait" class="screen">
+        <div class="badge big" data-badge>P?</div>
+        <div class="status" id="wait-text">Waiting for the game screen…</div>
+      </section>
+
+      <!-- Settings overlay -->
+      <div id="settings" class="overlay hidden">
+        <div class="panel">
+          <h2>Controls</h2>
+          <div class="row">
+            <span>Steering</span>
+            <div class="seg" id="seg-mode">
+              <button data-mode="tilt">Tilt</button>
+              <button data-mode="touch">Touch</button>
+            </div>
+          </div>
+          <div class="row">
+            <span>Tilt sensitivity</span>
+            <input type="range" id="sens" min="15" max="60" step="1" />
+          </div>
+          <div class="row"><span>Auto-accelerate</span><input type="checkbox" id="auto-gas" /></div>
+          <div class="row"><span>Flick phone for tricks</span><input type="checkbox" id="flick" /></div>
+          <div class="row"><span>Invert tilt</span><input type="checkbox" id="invert" /></div>
+          <div class="row">
+            <button class="wide" id="btn-calibrate">Set current angle as straight</button>
+            <button class="wide" id="btn-reset-cal">Reset</button>
+          </div>
+          <div class="row small" id="net-info">Latency: –</div>
+          <button class="close" id="btn-close-settings">Done</button>
+        </div>
+      </div>
+
+      <div id="rotate" class="overlay rotate-overlay">
+        <div class="phone-icon"></div>
+        <p>Turn your phone sideways</p>
+      </div>
+      <div id="banner" class="banner hidden"></div>
+    </div>
+    <script type="module" src="/src/controller/main.ts"></script>
+  </body>
+</html>
