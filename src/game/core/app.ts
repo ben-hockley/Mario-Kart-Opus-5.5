@@ -42,7 +42,7 @@ export class Session {
   points = new Map<string, number>();
   roster: RosterEntry[] = [];
 
-  /** Humans plus AI racers (spare characters first, then recoloured duplicates). */
+  /** Humans plus AI racers (spare characters first, then duplicates with recoloured karts). */
   buildRoster() {
     const humans: RosterEntry[] = this.players.map((p) => {
       const char = CHARACTERS.find((c) => c.id === p.charId) ?? CHARACTERS[0];
@@ -83,7 +83,7 @@ function recolour(c: CharacterDef): CharacterDef {
   const col = hexToRgb(c.kart);
   rgbToHsl(col[0], col[1], col[2], hsl);
   const h = (hsl.h + 0.45) % 1;
-  return { ...c, name: `${c.name} Jr.`, kart: hslToHex(h, Math.min(1, hsl.s + 0.1), Math.min(0.6, Math.max(0.35, hsl.l))) };
+  return { ...c, name: `${c.name} II`, kart: hslToHex(h, Math.min(1, hsl.s + 0.1), Math.min(0.6, Math.max(0.35, hsl.l))) };
 }
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);

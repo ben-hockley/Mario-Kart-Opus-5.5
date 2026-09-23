@@ -1,6 +1,6 @@
 import type { App, GameState, Player } from '../core/app';
 import type { ServerInfo } from '../../shared/protocol';
-import { CHARACTERS } from '../kart/characters';
+import { CHARACTERS, type WeightClass } from '../kart/characters';
 import { characterPortraits } from '../ui/portraits';
 import { TRACKS } from '../track/tracks';
 import { Track } from '../track/track';
@@ -279,6 +279,38 @@ export class SetupState extends OptionScreen {
 // Character select
 // ---------------------------------------------------------------------------
 
+/** Character groups, left to right. Each is a 3×3 block with one row per weight class. */
+const SERIES = ['mario', 'guest'] as const;
+const ROWS: WeightClass[] = ['Light', 'Medium', 'Heavy'];
+const GROUP_COLS = 3;
+
+/** Character index at each [row][column] of the select grid, with the groups side by side. */
+const CHAR_LAYOUT: (number | undefined)[][] = ROWS.map((weightClass) => {
+  const row: (number | undefined)[] = [];
+  SERIES.forEach((series, g) => {
+    CHARACTERS.flatMap((c, i) => (c.series === series && c.weightClass === weightClass ? [i] : []))
+      .slice(0, GROUP_COLS)
+      .forEach((i, k) => (row[g * GROUP_COLS + k] = i));
+  });
+  return row;
+});
+
+/** Move a character-select cursor one step, wrapping round and skipping empty cells. */
+function moveCursor(index: number, dir: 'left' | 'right' | 'up' | 'down'): number {
+  const rows = CHAR_LAYOUT.length;
+  const cols = SERIES.length * GROUP_COLS;
+  let row = CHAR_LAYOUT.findIndex((r) => r.includes(index));
+  let col = CHAR_LAYOUT[row].indexOf(index);
+  const [dr, dc] = { left: [0, -1], right: [0, 1], up: [-1, 0], down: [1, 0] }[dir];
+  for (let step = 0; step < rows * cols; step++) {
+    row = (row + dr + rows) % rows;
+    col = (col + dc + cols) % cols;
+    const next = CHAR_LAYOUT[row][col];
+    if (next !== undefined) return next;
+  }
+  return index;
+}
+
 export class CharSelectState implements GameState {
   private root!: HTMLElement;
   private cursor = new Map<number, number>();
@@ -297,15 +329,25 @@ export class CharSelectState implements GameState {
       <div class="player-panels" data-panels style="--n:${players.length}"></div>
     </div>`);
     const grid = this.root.querySelector('[data-grid]')!;
-    CHARACTERS.forEach((c) => {
-      grid.appendChild(
-        el(`<div class="char-card" data-char="${c.id}">
-          <div class="cursors"></div>
-          <img src="${portraits.get(c.id)}" alt="">
-          <div class="name">${c.name}</div><div class="cls">${c.weightClass}</div>
-        </div>`),
-      );
-    });
+    for (let g = 0; g < SERIES.length; g++) {
+      const group = el(`<div class="char-group"></div>`);
+      const cells = CHAR_LAYOUT.flatMap((row) => Array.from({ length: GROUP_COLS }, (_, k) => row[g * GROUP_COLS + k]));
+      for (const i of cells) {
+        if (i === undefined) {
+          group.appendChild(el(`<div></div>`));
+          continue;
+        }
+        const c = CHARACTERS[i];
+        group.appendChild(
+          el(`<div class="char-card" data-char="${c.id}">
+            <div class="cursors"></div>
+            <img src="${portraits.get(c.id)}" alt="">
+            <div class="name">${c.name}</div><div class="cls">${c.weightClass}</div>
+          </div>`),
+        );
+      }
+      grid.appendChild(group);
+    }
     this.app.ui.appendChild(this.root);
     this.render();
   }
@@ -326,10 +368,7 @@ export class CharSelectState implements GameState {
       let c = this.cursor.get(p.index) ?? 0;
       const locked = this.locked.has(p.index);
       if (!locked && (a === 'left' || a === 'right' || a === 'up' || a === 'down')) {
-        const row = Math.floor(c / 4);
-        if (a === 'left') c = row * 4 + ((c - 1 + 4) % 4);
-        if (a === 'right') c = row * 4 + ((c + 1) % 4);
-        if (a === 'up' || a === 'down') c = (c + 4) % 8;
+        c = moveCursor(c, a);
         this.cursor.set(p.index, c);
         p.charId = CHARACTERS[c].id;
         this.app.sfx.play('menuMove');
