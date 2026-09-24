@@ -44,11 +44,21 @@ export interface KartStats {
   weight: number;
 }
 
-export function statsFor(c: CharacterDef): KartStats {
+/** Vehicle modifiers for the ratings (see VehicleDef). */
+type Mods = Pick<CharacterDef, 'speed' | 'accel' | 'handling' | 'weight'>;
+
+/** A driver's 1–5 ratings adjusted by their vehicle, kept close to the range the physics is tuned for. */
+export function ratingsFor(c: CharacterDef, v?: Mods): Mods {
+  const r = (k: keyof Mods) => Math.min(5.5, Math.max(0.5, c[k] + (v?.[k] ?? 0)));
+  return { speed: r('speed'), accel: r('accel'), handling: r('handling'), weight: r('weight') };
+}
+
+export function statsFor(c: CharacterDef, v?: Mods): KartStats {
+  const r = ratingsFor(c, v);
   return {
-    maxSpeed: 27.5 + c.speed * 0.9,
-    accel: 9 + c.accel * 2.2,
-    turn: 1.75 + c.handling * 0.13,
-    weight: 0.6 + c.weight * 0.25,
+    maxSpeed: 27.5 + r.speed * 0.9,
+    accel: 9 + r.accel * 2.2,
+    turn: 1.75 + r.handling * 0.13,
+    weight: 0.6 + r.weight * 0.25,
   };
 }

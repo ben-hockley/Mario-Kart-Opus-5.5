@@ -452,6 +452,59 @@ body {
   border-radius: 5px;
 }
 
+/* Vehicle select */
+/* Three labelled groups (karts, bikes, guest cars) of 4-wide card blocks, reusing the character cards. */
+.vehicle-grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(14px, 2vw, 32px);
+}
+.vehicle-group {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.group-title {
+  font-family: var(--display);
+  font-size: clamp(14px, 1.4vw, 22px);
+  color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+.vehicle-group .char-group {
+  flex: 1;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(var(--rows), 1fr);
+}
+.vehicle-group .char-card {
+  border-radius: 12px;
+}
+.vehicle-group .char-card .name {
+  font-size: clamp(10px, 0.85vw, 15px);
+  margin-bottom: 6px;
+}
+.vehicle-group .cursor-tag {
+  font-size: 12px;
+  padding: 0 5px;
+}
+.ppanel.ride {
+  grid-template-columns: auto auto 1fr;
+}
+.ppanel.ride img {
+  grid-row: 2 / span 4;
+  width: clamp(72px, 9vw, 150px);
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+.ppanel em {
+  font-style: normal;
+  margin-left: 4px;
+}
+.ppanel em.up {
+  color: var(--good);
+}
+.ppanel em.down {
+  color: #ff6a5e;
+}
+
 /* Track select */
 .track-grid {
   display: grid;

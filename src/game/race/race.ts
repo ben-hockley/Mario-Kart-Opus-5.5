@@ -5,6 +5,7 @@ import type { TrackDef } from '../track/types';
 import { buildTrackScene, type TrackScene } from '../track/trackMesh';
 import { Kart, type KartEvent } from '../kart/kart';
 import type { CharacterDef } from '../kart/characters';
+import type { VehicleDef } from '../kart/vehicles';
 import { ItemSystem } from '../items/itemSystem';
 import { AIDriver, type Difficulty } from '../ai/aiDriver';
 import { Particles } from '../render/particles';
@@ -13,6 +14,7 @@ import { rand } from '../core/math';
 
 export interface RacerSetup {
   char: CharacterDef;
+  vehicle: VehicleDef;
   /** Local player index, or -1 for AI. */
   playerIndex: number;
   color: string;
@@ -96,7 +98,7 @@ export class Race {
     // Grid: two staggered columns behind the line.
     const L = this.track.length;
     opts.racers.forEach((r, i) => {
-      const kart = new Kart(i, r.char, r.playerIndex, r.color);
+      const kart = new Kart(i, r.char, r.playerIndex, r.color, r.vehicle);
       const row = Math.floor(i / 2);
       const col = i % 2;
       const halfW = this.track.samples[0].halfW;

@@ -7,7 +7,8 @@ import { CHARACTERS } from './characters';
 
 /**
  * Driver models (fetched by `npm run fetch-characters` into public/characters/<id>/).
- * Each is loaded once, baked into static meshes in its seated pose, and cloned per kart.
+ * Each is loaded once and kept rigged. Every pose it's needed in (on a kart or a bike, with the hands on that
+ * vehicle's grips) is baked into static meshes once and shared by the drivers in it.
  *
  * The Mario Kart Wii models share one skeleton layout that `seat()` poses directly. Models from other games
  * have no skeleton (OBJ) or an unusable one, so they get a simple generated rig built from the landmarks in
@@ -109,13 +110,44 @@ const MODELS: Record<string, ModelSpec> = {
 export interface Driver {
   /** Seated driver, facing +z with the hips at the origin, in the model's own units (see `height`). */
   model: THREE.Group;
-  /** Midpoint between the hands, where the steering wheel goes. */
-  hands: THREE.Vector3;
-  /** Height of the top of the head above the hips. */
+  /** Height of the top of the head above the hips, in the default kart pose. */
   height: number;
 }
 
-const templates = new Map<string, Driver>();
+/** How a driver sits. The default is the kart pose with the arms reaching forward. */
+export interface DriverPose {
+  /** Astride a bike, knees bent, instead of legs out along a kart floor. */
+  bike?: boolean;
+  /** Where the left wrist goes, relative to the hips, in the model's own units. The right wrist mirrors it. */
+  hands?: THREE.Vector3;
+}
+
+/** A loaded character, kept rigged so it can be baked into any pose. */
+interface Template {
+  /** Holds the skeleton and meshes; restoring `rest` returns it to the loaded pose. */
+  root: THREE.Object3D;
+  meshes: THREE.Mesh[];
+  materials: THREE.Material[][];
+  bone: (name: string) => THREE.Object3D | undefined;
+  rest: [THREE.Object3D, THREE.Vector3, THREE.Quaternion][];
+  /** Generated rig (long-legged guests), whose legs stretch out on karts. */
+  generated: boolean;
+  /** Hips of the default pose (legless characters sit on the bottom of their bounding box). */
+  hips: THREE.Vector3 | null;
+  height: number;
+  poses: Map<string, Posed>;
+}
+
+interface Posed {
+  /** One per mesh, with the hips at the origin. */
+  geoms: THREE.BufferGeometry[];
+  /** Hips in the unposed model. */
+  hips: THREE.Vector3;
+  /** Top of the head above the hips. */
+  top: number;
+}
+
+const templates = new Map<string, Template>();
 
 /** Load every character's model. Must finish before any KartModel or portrait is built. */
 export async function loadCharacterModels(): Promise<void> {
@@ -124,18 +156,53 @@ export async function loadCharacterModels(): Promise<void> {
   );
 }
 
-/** A new instance of a character's driver, with its own materials (so it can be tinted independently). */
-export function driverModel(id: string): Driver {
+/** Height of a driver's head above their hips in the default pose, in the model's own units. */
+export function driverHeight(id: string): number {
   const t = templates.get(id);
   if (!t) throw new Error(`Character model "${id}" is not loaded`);
-  const model = t.model.clone();
-  model.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
-  });
-  return { model, hands: t.hands.clone(), height: t.height };
+  return t.height;
 }
 
-interface Collada {
+/** A new instance of a character's driver, with its own materials (so it can be tinted independently). */
+export function driverModel(id: string, pose: DriverPose = {}): Driver {
+  const t = templates.get(id);
+  if (!t) throw new Error(`Character model "${id}" is not loaded`);
+  const posed = posedGeometry(t, pose);
+  const model = new THREE.Group();
+  posed.geoms.forEach((g, i) => {
+    const mats = t.materials[i].map((m) => m.clone());
+    model.add(new THREE.Mesh(g, mats.length === 1 ? mats[0] : mats));
+  });
+  return { model, height: t.height };
+}
+
+/** Bake the character into a pose (cached), with the hips at the origin. */
+function posedGeometry(t: Template, pose: DriverPose): Posed {
+  const key = `${pose.bike ? 'bike' : 'kart'}|${pose.hands?.toArray().map((v) => v.toFixed(3)).join(',') ?? ''}`;
+  let posed = t.poses.get(key);
+  if (posed) return posed;
+  for (const [o, p, q] of t.rest) {
+    o.position.copy(p);
+    o.quaternion.copy(q);
+  }
+  t.root.updateMatrixWorld(true);
+  // Characters without legs have no hip joints; they keep the hips of their default pose.
+  let hips = seat(t.bone, t.generated, !!pose.bike) ?? t.hips?.clone() ?? null;
+  if (pose.hands && hips) {
+    reach(t.bone, 'l', hips.clone().add(pose.hands));
+    reach(t.bone, 'r', hips.clone().add(pose.hands.clone().setX(-pose.hands.x)));
+  }
+  const geoms = t.meshes.map((o) => bakePose(o));
+  const box = new THREE.Box3();
+  for (const g of geoms) box.union(g.computeBoundingBox() ?? g.boundingBox!);
+  hips ??= box.getCenter(new THREE.Vector3()).setY(box.min.y);
+  for (const g of geoms) g.translate(-hips.x, -hips.y, -hips.z);
+  posed = { geoms, hips, top: box.max.y - hips.y };
+  t.poses.set(key, posed);
+  return posed;
+}
+
+export interface Collada {
   text: string;
   /** Texture files whose samplers use MIRROR wrapping. */
   mirrored: Set<string>;
@@ -148,7 +215,7 @@ interface Collada {
  * whose texture the spec replaces; their original texture isn't loaded (nor are normal/specular maps, which the
  * toon shading doesn't use and the fetch script doesn't download).
  */
-function normaliseCollada(text: string, replaced: string[] = []): Collada {
+export function normaliseCollada(text: string, replaced: string[] = []): Collada {
   // COLLADA 1.5 wraps image references as <init_from><ref>x</ref></init_from>; three's loader expects 1.4's plain text.
   text = text.replace(/<init_from>\s*<ref>([^<]*)<\/ref>\s*<\/init_from>/g, '<init_from>$1</init_from>');
   for (const name of replaced) {
@@ -183,7 +250,7 @@ function normaliseCollada(text: string, replaced: string[] = []): Collada {
   return { text, mirrored, jointNames };
 }
 
-async function loadDriver(dir: string, spec: ModelSpec): Promise<Driver> {
+async function loadDriver(dir: string, spec: ModelSpec): Promise<Template> {
   const manager = new THREE.LoadingManager();
   const loaded = new Promise<void>((resolve) => {
     manager.onLoad = resolve;
@@ -223,22 +290,19 @@ async function loadDriver(dir: string, spec: ModelSpec): Promise<Driver> {
 
   let meshes: THREE.Mesh[];
   let bone: (name: string) => THREE.Object3D | undefined;
+  let rigRoot: THREE.Object3D = root;
   if (spec.rig) {
     const rig = autoRig(sources, spec.rig);
     meshes = rig.meshes;
+    rigRoot = rig.container;
     bone = (name) => rig.bones.get(name);
   } else {
     meshes = sources;
     bone = (name) => scene.getObjectByName(name) ?? scene.getObjectByName(collada?.jointNames.get(name) ?? '');
   }
-  let hips = seat(bone, !!spec.rig);
-  const wristL = bone('wrist_l1');
-  const wristR = bone('wrist_r1');
 
-  const out = new THREE.Group();
-  for (const o of meshes) {
-    const geom = bakePose(o);
-    const mats = ((Array.isArray(o.material) ? o.material : [o.material]) as THREE.MeshPhongMaterial[]).map((m, i) => {
+  const materials = meshes.map((o) =>
+    ((Array.isArray(o.material) ? o.material : [o.material]) as THREE.MeshPhongMaterial[]).map((m, i) => {
       const override = spec.materials?.[m.name];
       const map = override?.map ? textures.get(override.map)! : override?.color ? null : m.map;
       if (map) {
@@ -252,25 +316,24 @@ async function loadDriver(dir: string, spec: ModelSpec): Promise<Driver> {
         // Eye textures hold one eye; on the Wii a texture matrix doubles U so MIRROR draws the other one.
         // The export drops that matrix, leaving a single eye stretched across the face. If the eye mesh's
         // UVs never reach the mirrored half, restore the doubling. (Peach's UVs already include it.)
-        if (mirror && /_eye\b|eye\.\d/.test(file) && maxU(geom, o.geometry.groups, i) < 1.5) map.repeat.x = 2;
+        if (mirror && /_eye\b|eye\.\d/.test(file) && maxU(o.geometry, o.geometry.groups, i) < 1.5) map.repeat.x = 2;
       }
       const color = override?.color ?? (map ? '#ffffff' : `#${m.color.getHexString()}`);
       const t = toon(color, { map: map ?? undefined, unique: true });
       t.alphaTest = override?.alphaTest ?? spec.alphaTest ?? 0;
       return t;
-    });
-    out.add(new THREE.Mesh(geom, mats.length === 1 ? mats[0] : mats));
-  }
+    }),
+  );
 
-  // Hips at the origin (characters without legs sit on the bottom of their bounding box).
-  const box = new THREE.Box3().setFromObject(out);
-  hips ??= box.getCenter(new THREE.Vector3()).setY(box.min.y);
-  for (const m of out.children as THREE.Mesh[]) m.geometry.translate(-hips.x, -hips.y, -hips.z);
-  const hands =
-    wristL && wristR
-      ? wristL.getWorldPosition(new THREE.Vector3()).add(wristR.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5).sub(hips)
-      : new THREE.Vector3(0, (box.max.y - hips.y) * 0.4, box.max.z - hips.z);
-  return { model: out, hands, height: (box.max.y - hips.y) / (spec.scale ?? 1) };
+  rigRoot.updateMatrixWorld(true);
+  const rest: Template['rest'] = [];
+  rigRoot.traverse((o) => rest.push([o, o.position.clone(), o.quaternion.clone()]));
+  const t: Template = { root: rigRoot, meshes, materials, bone, rest, generated: !!spec.rig, hips: null, height: 1, poses: new Map() };
+  // The default kart pose sets the hips and the height every driver is sized by.
+  const first = posedGeometry(t, {});
+  t.hips = first.hips;
+  t.height = first.top / (spec.scale ?? 1);
+  return t;
 }
 
 const smoothstep = (edge0: number, edge1: number, x: number) => {
@@ -283,7 +346,7 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
  * each vertex weighted to the limb it belongs to. The meshes are first baked in their rest pose and scaled
  * to stand 1 unit tall on y=0, so `rig` can use fractions of the height.
  */
-function autoRig(sources: THREE.Mesh[], rig: Rig): { meshes: THREE.SkinnedMesh[]; bones: Map<string, THREE.Bone> } {
+function autoRig(sources: THREE.Mesh[], rig: Rig): { meshes: THREE.SkinnedMesh[]; bones: Map<string, THREE.Bone>; container: THREE.Group } {
   const parts = sources.map((m) => ({ geom: bakePose(m), material: m.material as THREE.Material | THREE.Material[] }));
   const box = new THREE.Box3();
   for (const p of parts) box.union(p.geom.computeBoundingBox() ?? p.geom.boundingBox!);
@@ -403,7 +466,7 @@ function autoRig(sources: THREE.Mesh[], rig: Rig): { meshes: THREE.SkinnedMesh[]
   container.updateMatrixWorld(true);
   const skeleton = new THREE.Skeleton(order.map((n) => bones.get(n)!));
   for (const m of meshes) m.bind(skeleton, new THREE.Matrix4());
-  return { meshes, bones };
+  return { meshes, bones, container };
 }
 
 /** Largest U coordinate used by material `index` (the whole mesh when it has no material groups). */
@@ -439,25 +502,59 @@ const STRETCHED_LEGS: typeof POSE = [
   ['leg_r2', 'ankle_r1', [-0.03, -0.3, 1]],
 ];
 
+/** Astride a bike: thighs forward and apart, shins down to the footrests. */
+const BIKE_LEGS: typeof POSE = [
+  ['leg_l1', 'leg_l2', [0.35, -0.3, 1]],
+  ['leg_r1', 'leg_r2', [-0.35, -0.3, 1]],
+  ['leg_l2', 'ankle_l1', [0.08, -1, -0.15]],
+  ['leg_r2', 'ankle_r1', [-0.08, -1, -0.15]],
+];
+
+const worldPos = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
+const segment = (from: THREE.Object3D, to: THREE.Object3D) => worldPos(to).sub(worldPos(from));
+
+const turnQ = new THREE.Quaternion();
+const parentQ = new THREE.Quaternion();
+const worldQ = new THREE.Quaternion();
+/** Rotate a joint (in world space) so that direction `from` becomes `to`. */
+function turn(joint: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3) {
+  turnQ.setFromUnitVectors(from.normalize(), to.normalize());
+  joint.parent!.getWorldQuaternion(parentQ);
+  joint.getWorldQuaternion(worldQ);
+  joint.quaternion.copy(parentQ.invert().multiply(turnQ.multiply(worldQ)));
+  joint.updateMatrixWorld(true);
+}
+
+/**
+ * Two-bone IK: bend one arm (shoulder -> elbow -> wrist) so the wrist lands on `target`, with the elbow out
+ * to the side and down. A target out of reach leaves the arm straight, pointing at it.
+ */
+function reach(bone: (name: string) => THREE.Object3D | undefined, side: 'l' | 'r', target: THREE.Vector3) {
+  const shoulder = bone(`arm_${side}1`);
+  const elbow = bone(`arm_${side}2`);
+  const wrist = bone(`wrist_${side}1`);
+  if (!shoulder || !elbow || !wrist) return;
+  const S = worldPos(shoulder);
+  const upper = S.distanceTo(worldPos(elbow));
+  const lower = worldPos(elbow).distanceTo(worldPos(wrist));
+  const toTarget = target.clone().sub(S);
+  const d = THREE.MathUtils.clamp(toTarget.length(), Math.abs(upper - lower) + 1e-4, (upper + lower) * 0.999);
+  const dir = toTarget.normalize();
+  const bend = new THREE.Vector3(side === 'l' ? 1 : -1, -1, -0.2);
+  bend.addScaledVector(dir, -bend.dot(dir)).normalize();
+  const along = (upper * upper - lower * lower + d * d) / (2 * d);
+  const E = S.clone().addScaledVector(dir, along).addScaledVector(bend, Math.sqrt(Math.max(0, upper * upper - along * along)));
+  turn(shoulder, segment(shoulder, elbow), E.clone().sub(S));
+  turn(elbow, segment(elbow, wrist), S.clone().addScaledVector(dir, d).sub(worldPos(elbow)));
+}
+
 /**
  * Bends the T-posed skeleton into a seated, hands-on-the-wheel pose by rotating each segment (in world space)
  * so it points along POSE. Returns the midpoint of the hips, or null for legless characters.
  */
-function seat(bone: (name: string) => THREE.Object3D | undefined, stretchLegs = false): THREE.Vector3 | null {
-  const q = new THREE.Quaternion();
-  const parentQ = new THREE.Quaternion();
-  const worldQ = new THREE.Quaternion();
-  /** Rotate a joint (in world space) so that direction `from` becomes `to`. */
-  const turn = (joint: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3) => {
-    q.setFromUnitVectors(from.normalize(), to.normalize());
-    joint.parent!.getWorldQuaternion(parentQ);
-    joint.getWorldQuaternion(worldQ);
-    joint.quaternion.copy(parentQ.invert().multiply(q.multiply(worldQ)));
-    joint.updateMatrixWorld(true);
-  };
-  const segment = (from: THREE.Object3D, to: THREE.Object3D) => to.getWorldPosition(new THREE.Vector3()).sub(from.getWorldPosition(new THREE.Vector3()));
-
-  const pose = stretchLegs ? [...STRETCHED_LEGS, ...POSE.filter(([name]) => name.startsWith('arm'))] : POSE;
+function seat(bone: (name: string) => THREE.Object3D | undefined, stretchLegs = false, bike = false): THREE.Vector3 | null {
+  const arms = POSE.filter(([name]) => name.startsWith('arm'));
+  const pose = bike ? [...BIKE_LEGS, ...arms] : stretchLegs ? [...STRETCHED_LEGS, ...arms] : POSE;
   for (const [name, childName, d] of pose) {
     const joint = bone(name);
     const child = bone(childName);
@@ -467,7 +564,7 @@ function seat(bone: (name: string) => THREE.Object3D | undefined, stretchLegs = 
   const l = bone('leg_l1');
   const r = bone('leg_r1');
   if (!l || !r) return null;
-  const hips = l.getWorldPosition(new THREE.Vector3()).add(r.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+  const hips = worldPos(l).add(worldPos(r)).multiplyScalar(0.5);
 
   // Bowser's tail hangs down through the seat; lay it out behind him.
   const tail = bone('tail_1');
@@ -480,7 +577,7 @@ function seat(bone: (name: string) => THREE.Object3D | undefined, stretchLegs = 
   const ankle = bone('ankle_l1');
   if (skirt && knee && ankle) {
     turn(skirt, new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0.5));
-    const hem = knee.getWorldPosition(new THREE.Vector3()).lerp(ankle.getWorldPosition(new THREE.Vector3()), 0.5).setX(hips.x);
+    const hem = worldPos(knee).lerp(worldPos(ankle), 0.5).setX(hips.x);
     skirt.position.copy(skirt.parent!.worldToLocal(hem));
     skirt.updateMatrixWorld(true);
   }
@@ -488,7 +585,7 @@ function seat(bone: (name: string) => THREE.Object3D | undefined, stretchLegs = 
 }
 
 /** Static world-space copy of a (possibly skinned) mesh in its current pose. Vertex colours are dropped. */
-function bakePose(mesh: THREE.Mesh): THREE.BufferGeometry {
+export function bakePose(mesh: THREE.Mesh): THREE.BufferGeometry {
   const src = mesh.geometry;
   const pos = src.getAttribute('position');
   const nrm = src.getAttribute('normal');

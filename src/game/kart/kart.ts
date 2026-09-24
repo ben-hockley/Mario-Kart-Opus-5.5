@@ -4,6 +4,7 @@ import { Track, TrackPos } from '../track/track';
 import type { CharacterDef, KartStats } from './characters';
 import { statsFor } from './characters';
 import { KartModel } from './kartModel';
+import { DEFAULT_VEHICLE, type VehicleDef } from './vehicles';
 import type { ItemKind } from '../items/itemTypes';
 
 export interface KartInput {
@@ -109,17 +110,18 @@ export class Kart {
   private visYawOffset = 0;
   private visSpin = 0;
   private visNormal = new THREE.Vector3(0, 1, 0);
-  private wheelSpin = 0;
   private squash = 0;
+  private lean = 0;
 
   constructor(
     readonly id: number,
     readonly char: CharacterDef,
     readonly playerIndex: number, // -1 for AI
     readonly color: string,
+    readonly vehicle: VehicleDef = DEFAULT_VEHICLE,
   ) {
-    this.stats = statsFor(char);
-    this.model = new KartModel(char);
+    this.stats = statsFor(char, vehicle);
+    this.model = new KartModel(char, vehicle);
   }
 
   get isHuman() {
@@ -468,13 +470,16 @@ export class Kart {
       body.position.y = Math.sin(t * Math.PI) * 0.6;
     }
     if (this.drifting) body.rotation.z += this.driftDir * 0.08;
+    // Bikes lean into turns, hardest in a drift.
+    const leanTarget = m.bike && this.grounded && this.controllable ? (this.drifting ? this.driftDir * 0.4 : this.input.steer * 0.3 * clamp(this.speed / 12, 0, 1)) : 0;
+    this.lean = damp(this.lean, leanTarget, 8, dt);
+    body.rotation.z += this.lean;
     this.squash = Math.max(0, this.squash - dt);
     const sq = Math.sin((this.squash / 0.25) * Math.PI) * 0.12;
     body.scale.set(1 + sq, 1 - sq, 1 + sq);
 
     // Wheels
-    this.wheelSpin += (this.speed * dt) / 0.4;
-    for (const w of m.wheels) w.rotation.x = this.wheelSpin;
+    m.wheels.forEach((w, i) => (w.rotation.x += (this.speed * dt) / m.wheelRadius[i]));
     const steerVis = this.drifting ? -this.driftDir * 0.15 : -this.input.steer * 0.45;
     for (const f of m.frontPivots) f.rotation.y = damp(f.rotation.y, this.controllable ? steerVis : 0, 12, dt);
 

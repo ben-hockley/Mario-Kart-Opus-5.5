@@ -8,10 +8,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { unzipSync } from 'fflate';
+import { download, finish } from './modelsResource';
 
-const SITE = 'https://models.spriters-resource.com';
 const OUT = join(import.meta.dirname, '..', 'public', 'characters');
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
 const MKWII = '/wii/mkwii/asset';
 
 /** Character id (matches characters.ts) -> asset page and the model file inside its zip. */
@@ -42,24 +41,6 @@ const SOURCES: { id: string; page: string; model: string }[] = [
 
 /** Textures the toon-shaded game doesn't use: Wii lightmaps, normal/bump, specular, mask and AO maps. */
 const UNUSED = /^lm_\d\.png$|bump|normal|_norm|_nml|_rgh|spec|mask|dirt/i;
-
-async function download(path: string): Promise<Uint8Array> {
-  const page = SITE + path;
-  const res = await fetch(page, { headers: { 'User-Agent': UA } });
-  if (!res.ok) throw new Error(`${page}: HTTP ${res.status}`);
-  const html = await res.text();
-  const file = /data-file="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
-  if (!file) throw new Error(`${page}: no download link found`);
-  // The media server only serves the zip to a browser session that has visited the asset page.
-  const cookie = res.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .join('; ');
-  const zip = await fetch(SITE + file, { headers: { 'User-Agent': UA, Referer: page, Cookie: cookie } });
-  const data = new Uint8Array(await zip.arrayBuffer());
-  if (!zip.ok || data[0] !== 0x50 || data[1] !== 0x4b) throw new Error(`${page}: download was not a zip file`);
-  return data;
-}
 
 for (const src of SOURCES) {
   const files = unzipSync(await download(src.page));
@@ -103,3 +84,4 @@ for (const src of SOURCES) {
   }
   console.log(`${src.id}: model${ext} + ${images.size} textures`);
 }
+await finish();

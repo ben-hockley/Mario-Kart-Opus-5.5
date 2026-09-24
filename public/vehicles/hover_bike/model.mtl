@@ -1,0 +1,9 @@
+newmtl hbike_vHoodNorm_m
+Kd 1 1 1
+map_Kd hbike_vHoodNorm_bmp.png
+newmtl Windsheild_m
+Kd 1 1 1
+map_Kd Windsheild_bmp.png
+newmtl hbike_vCoil_m
+Kd 1 1 1
+map_Kd hbike_vCoil_bmp.png

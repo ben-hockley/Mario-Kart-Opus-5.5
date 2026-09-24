@@ -9,7 +9,8 @@
     "start": "tsx server/index.ts",
     "play": "npm run build && npm start",
     "typecheck": "tsc --noEmit",
-    "fetch-characters": "tsx scripts/fetch-characters.ts"
+    "fetch-characters": "tsx scripts/fetch-characters.ts",
+    "fetch-vehicles": "tsx scripts/fetch-vehicles.ts"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -25,6 +26,7 @@
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.1",
     "fflate": "^0.8.3",
+    "puppeteer-core": "^25.12.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"

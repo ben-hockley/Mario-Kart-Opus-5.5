@@ -1,7 +1,8 @@
 import type { App, GameState, Player } from '../core/app';
 import type { ServerInfo } from '../../shared/protocol';
-import { CHARACTERS, type WeightClass } from '../kart/characters';
-import { characterPortraits } from '../ui/portraits';
+import { CHARACTERS, ratingsFor, type WeightClass } from '../kart/characters';
+import { VEHICLES } from '../kart/vehicles';
+import { characterPortraits, riderPortrait, vehiclePortraits } from '../ui/portraits';
 import { TRACKS } from '../track/tracks';
 import { Track } from '../track/track';
 import { THEMES } from '../track/themes';
@@ -295,17 +296,16 @@ const CHAR_LAYOUT: (number | undefined)[][] = ROWS.map((weightClass) => {
   return row;
 });
 
-/** Move a character-select cursor one step, wrapping round and skipping empty cells. */
-function moveCursor(index: number, dir: 'left' | 'right' | 'up' | 'down'): number {
-  const rows = CHAR_LAYOUT.length;
-  const cols = SERIES.length * GROUP_COLS;
-  let row = CHAR_LAYOUT.findIndex((r) => r.includes(index));
-  let col = CHAR_LAYOUT[row].indexOf(index);
+/** Move a select-screen cursor one step through a [row][column] layout, wrapping round and skipping empty cells. */
+function moveCursor(layout: (number | undefined)[][], cols: number, index: number, dir: 'left' | 'right' | 'up' | 'down'): number {
+  const rows = layout.length;
+  let row = layout.findIndex((r) => r.includes(index));
+  let col = layout[row].indexOf(index);
   const [dr, dc] = { left: [0, -1], right: [0, 1], up: [-1, 0], down: [1, 0] }[dir];
   for (let step = 0; step < rows * cols; step++) {
     row = (row + dr + rows) % rows;
     col = (col + dc + cols) % cols;
-    const next = CHAR_LAYOUT[row][col];
+    const next = layout[row][col];
     if (next !== undefined) return next;
   }
   return index;
@@ -368,7 +368,7 @@ export class CharSelectState implements GameState {
       let c = this.cursor.get(p.index) ?? 0;
       const locked = this.locked.has(p.index);
       if (!locked && (a === 'left' || a === 'right' || a === 'up' || a === 'down')) {
-        c = moveCursor(c, a);
+        c = moveCursor(CHAR_LAYOUT, SERIES.length * GROUP_COLS, c, a);
         this.cursor.set(p.index, c);
         p.charId = CHARACTERS[c].id;
         this.app.sfx.play('menuMove');
@@ -393,12 +393,7 @@ export class CharSelectState implements GameState {
     if (players.length && players.every((p) => this.locked.has(p.index))) {
       if (this.doneTimer < 0) this.doneTimer = 0.7;
       this.doneTimer -= dt;
-      if (this.doneTimer <= 0) {
-        const s = this.app.session;
-        s.buildRoster();
-        if (s.mode === 'gp') this.app.setState(new RaceState(this.app, 0));
-        else this.app.setState(new TrackSelectState(this.app));
-      }
+      if (this.doneTimer <= 0) this.app.setState(new VehicleSelectState(this.app));
     }
   }
 
@@ -423,6 +418,149 @@ export class CharSelectState implements GameState {
         el(`<div class="ppanel ${this.locked.has(p.index) ? 'locked' : ''}" style="--pc:${p.color}">
           <div class="who"><span>P${p.index + 1} · ${c.name}</span></div>
           ${bar('Speed', c.speed)}${bar('Accel', c.accel)}${bar('Handling', c.handling)}${bar('Weight', c.weight)}
+        </div>`),
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vehicle select
+// ---------------------------------------------------------------------------
+
+/** Vehicle groups, left to right, each a block VEHICLE_COLS wide filled row by row. */
+const VEHICLE_GROUPS = [
+  { id: 'kart', label: 'Karts' },
+  { id: 'bike', label: 'Bikes' },
+  { id: 'guest', label: 'Guest cars' },
+] as const;
+const VEHICLE_COLS = 4;
+
+/** Vehicle index at each [row][column] of the select grid, with the groups side by side. */
+const VEHICLE_LAYOUT: (number | undefined)[][] = (() => {
+  const groups = VEHICLE_GROUPS.map((g) => VEHICLES.flatMap((v, i) => (v.group === g.id ? [i] : [])));
+  const rows = Math.max(...groups.map((g) => Math.ceil(g.length / VEHICLE_COLS)));
+  return Array.from({ length: rows }, (_, r) => groups.flatMap((g) => Array.from({ length: VEHICLE_COLS }, (_, c) => g[r * VEHICLE_COLS + c])));
+})();
+
+export class VehicleSelectState implements GameState {
+  private root!: HTMLElement;
+  private cursor = new Map<number, number>();
+  private locked = new Set<number>();
+  private doneTimer = -1;
+
+  constructor(private app: App) {}
+
+  enter() {
+    const thumbs = vehiclePortraits();
+    const players = this.app.session.players;
+    for (const p of players) this.cursor.set(p.index, Math.max(0, VEHICLES.findIndex((v) => v.id === p.vehicleId)));
+    this.root = el(`<div class="screen">
+      <div class="screen-head"><div class="screen-title">Choose your ride</div><div class="screen-sub">Every racer fits every kart, bike and car</div></div>
+      <div class="char-grid vehicle-grid" data-grid></div>
+      <div class="player-panels" data-panels style="--n:${players.length}"></div>
+    </div>`);
+    const grid = this.root.querySelector('[data-grid]')!;
+    VEHICLE_GROUPS.forEach((g, k) => {
+      const group = el(`<div class="vehicle-group"><div class="group-title">${g.label}</div><div class="char-group" style="--rows:${VEHICLE_LAYOUT.length}"></div></div>`);
+      const cells = group.querySelector('.char-group')!;
+      for (const i of VEHICLE_LAYOUT.flatMap((row) => row.slice(k * VEHICLE_COLS, (k + 1) * VEHICLE_COLS))) {
+        if (i === undefined) {
+          cells.appendChild(el(`<div></div>`));
+          continue;
+        }
+        const v = VEHICLES[i];
+        cells.appendChild(
+          el(`<div class="char-card" data-vehicle="${v.id}" title="${esc(v.name)} · ${esc(v.from)}">
+            <div class="cursors"></div>
+            <img src="${thumbs.get(v.id)}" alt="">
+            <div class="name">${esc(v.name)}</div>
+          </div>`),
+        );
+      }
+      grid.appendChild(group);
+    });
+    this.app.ui.appendChild(this.root);
+    this.render();
+  }
+
+  exit() {
+    this.root.remove();
+  }
+
+  phoneMode(p: Player) {
+    return { mode: 'menu' as const, hint: this.locked.has(p.index) ? 'Ready! (B to change)' : 'Pick your ride' };
+  }
+
+  update(dt: number) {
+    const players = this.app.session.players;
+    for (const { player, sourceId, a } of this.app.menuActions()) {
+      const p = player ?? (sourceId === 'kb' ? players[0] : undefined);
+      if (!p) continue;
+      let c = this.cursor.get(p.index) ?? 0;
+      const locked = this.locked.has(p.index);
+      if (!locked && (a === 'left' || a === 'right' || a === 'up' || a === 'down')) {
+        c = moveCursor(VEHICLE_LAYOUT, VEHICLE_GROUPS.length * VEHICLE_COLS, c, a);
+        this.cursor.set(p.index, c);
+        p.vehicleId = VEHICLES[c].id;
+        this.app.sfx.play('menuMove');
+      } else if (a === 'ok' && !locked) {
+        this.locked.add(p.index);
+        p.vehicleId = VEHICLES[c].id;
+        this.app.sfx.play('menuOk');
+        this.app.syncPhones();
+      } else if (isBack(a)) {
+        this.app.sfx.play('menuBack');
+        if (locked) {
+          this.locked.delete(p.index);
+          this.doneTimer = -1;
+          this.app.syncPhones();
+        } else if (p.index === 0) {
+          this.app.setState(new CharSelectState(this.app));
+          return;
+        }
+      }
+      this.render();
+    }
+    if (players.length && players.every((p) => this.locked.has(p.index))) {
+      if (this.doneTimer < 0) this.doneTimer = 0.7;
+      this.doneTimer -= dt;
+      if (this.doneTimer <= 0) {
+        const s = this.app.session;
+        s.buildRoster();
+        if (s.mode === 'gp') this.app.setState(new RaceState(this.app, 0));
+        else this.app.setState(new TrackSelectState(this.app));
+      }
+    }
+  }
+
+  private render() {
+    const players = this.app.session.players;
+    for (const card of this.root.querySelectorAll<HTMLElement>('[data-vehicle]')) {
+      const idx = VEHICLES.findIndex((v) => v.id === card.dataset.vehicle);
+      const here = players.filter((p) => this.cursor.get(p.index) === idx);
+      card.classList.toggle('hover', here.length > 0);
+      card.classList.toggle('multi', here.length > 1);
+      if (here.length) card.style.setProperty('--pc', here[0].color);
+      card.querySelector('.cursors')!.innerHTML = here
+        .map((p) => `<span class="cursor-tag" style="--pc:${p.color}">P${p.index + 1}${this.locked.has(p.index) ? ' ✓' : ''}</span>`)
+        .join('');
+    }
+    const panels = this.root.querySelector('[data-panels]')!;
+    panels.innerHTML = '';
+    for (const p of players) {
+      const c = CHARACTERS.find((x) => x.id === p.charId) ?? CHARACTERS[0];
+      const v = VEHICLES[this.cursor.get(p.index) ?? 0];
+      const r = ratingsFor(c, v);
+      const bar = (label: string, key: keyof typeof r) => {
+        const mod = v[key] ? `<em class="${v[key] > 0 ? 'up' : 'down'}">${v[key] > 0 ? '+' : '−'}${Math.abs(v[key])}</em>` : '';
+        return `<span>${label}${mod}</span><div class="bar"><i style="width:${Math.min(100, r[key] * 20)}%"></i></div>`;
+      };
+      panels.appendChild(
+        el(`<div class="ppanel ride ${this.locked.has(p.index) ? 'locked' : ''}" style="--pc:${p.color}">
+          <div class="who"><span>P${p.index + 1} · ${esc(c.name)} · ${esc(v.name)}</span></div>
+          <img src="${riderPortrait(c, v)}" alt="">
+          ${bar('Speed', 'speed')}${bar('Accel', 'accel')}${bar('Handling', 'handling')}${bar('Weight', 'weight')}
         </div>`),
       );
     }
@@ -536,7 +674,7 @@ export class TrackSelectState implements GameState {
       else if (a === 'ok') return this.go();
       else if (isBack(a)) {
         this.app.sfx.play('menuBack');
-        this.app.setState(new CharSelectState(this.app));
+        this.app.setState(new VehicleSelectState(this.app));
         return;
       } else continue;
       this.app.sfx.play('menuMove');

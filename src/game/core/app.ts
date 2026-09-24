@@ -5,6 +5,7 @@ import { GameRenderer } from '../render/renderer';
 import { Sfx } from '../audio/sfx';
 import type { Difficulty } from '../ai/aiDriver';
 import { CHARACTERS, type CharacterDef } from '../kart/characters';
+import { DEFAULT_VEHICLE, VEHICLES, vehicleById } from '../kart/vehicles';
 import type { RacerSetup } from '../race/race';
 import { shuffle } from './math';
 
@@ -21,6 +22,7 @@ export interface Player {
   sourceId: string;
   color: string;
   charId: string;
+  vehicleId: string;
 }
 
 export interface RosterEntry extends RacerSetup {
@@ -46,7 +48,7 @@ export class Session {
   buildRoster() {
     const humans: RosterEntry[] = this.players.map((p) => {
       const char = CHARACTERS.find((c) => c.id === p.charId) ?? CHARACTERS[0];
-      return { key: `P${p.index + 1}`, name: char.name, char, playerIndex: p.index, color: p.color };
+      return { key: `P${p.index + 1}`, name: char.name, char, vehicle: vehicleById(p.vehicleId), playerIndex: p.index, color: p.color };
     });
     const taken = new Set(this.players.map((p) => p.charId));
     const spare = shuffle(CHARACTERS.filter((c) => !taken.has(c.id)));
@@ -57,6 +59,7 @@ export class Session {
       key: `ai${i}`,
       name: char.name,
       char,
+      vehicle: VEHICLES[Math.floor(Math.random() * VEHICLES.length)],
       playerIndex: -1,
       color: char.kart,
     }));
@@ -173,6 +176,7 @@ export class App {
       sourceId,
       color: PLAYER_COLORS.find((c) => !used.has(c)) ?? PLAYER_COLORS[players.length],
       charId: CHARACTERS[(players.length * 3) % CHARACTERS.length].id,
+      vehicleId: DEFAULT_VEHICLE.id,
     };
     players.push(p);
     this.sfx.play('join');
